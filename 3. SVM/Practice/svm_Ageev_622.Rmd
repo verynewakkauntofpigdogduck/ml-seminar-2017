@@ -1,0 +1,697 @@
+---
+title: "SVM"
+author: "Дмитрий Корчемкин, Владимир Агеев, 622гр."
+output: 
+  html_notebook:
+      toc: yes
+      toc_float: yes
+      toc_depth: 3
+---
+
+```{r}
+library(e1071)
+library(kernlab)
+library(LiblineaR)
+library(psych)
+library(ISLR)
+library(gmum.r)
+library(penalizedSVM)
+library(ade4)
+library(MASS)
+library(glmnet)
+```
+
+
+#Линейно разделимые данные
+
+Сгенерируем данные, которые линейно разделимы
+```{r}
+set.seed(100)
+x <- matrix(c(rnorm(50), rnorm(50,5)), ncol = 2, nrow = 50, byrow = TRUE)
+y <- c(rep(1, 25), rep(2,25))
+simple.dat <- data.frame(x = x, y = as.factor(y))
+plot(simple.dat[,c(2,1)], col = c("red", "black")[y])
+```
+
+Построим svm с линейным ядром, данные нормировать не будем, штраф пусть будет "произвольным"
+```{r}
+svm.linearfit <- svm(y ~., data = simple.dat, kernel = "linear", cost = 10)
+plot(svm.linearfit, simple.dat, symbolPalette = rainbow(2), xlim = c(-2, 7), ylim = c(-2, 7))
+```
+На графике крестиками отмечаются опорные вектора. Их можно получить из объекта, который возвращает svm() по имени $index.
+
+```{r}
+svm.linearfit$index
+```
+
+Сгенерируем тестовую выборку и проверим качество классификации.
+```{r}
+x.test <- matrix(c(rnorm(50), rnorm(50,5)), ncol = 2, nrow = 50, byrow = TRUE)
+y.test <- c(rep(1, 25), rep(2,25))
+svm.pred <- predict(svm.linearfit, newdata = x.test)
+```
+Confusion matrix:
+```{r}
+tb <- table(svm.pred, y.test)
+print(tb)
+```
+
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+В следующем разделе подробнее разберем какие параметры есть у svm() и попробуем классифицировать более сложные данные.
+
+
+#Про пакет e1071
+Для построения svm будем использовать пакет e1071 и функцию svm() оттуда. Функция имеет следующие параметры:
+
+
+* formula	-- a symbolic description of the model to be fit
+* data	-- data frame (optional)
+* x	-- a data matrix, a vector, or a sparse matrix
+* y	--  a response vector with one label for each row/component of x. Can be either a factor (for classification tasks) or a numeric vector (for regression).
+* scale	 -- A logical vector indicating the variables to be scaled. Per default, data are scaled internally (both x and y variables) to zero mean and unit variance. The center and scale values are returned and used for later predictions.
+* type	-- тип svm. Регрессия / классификация + различные формы задачи квадратичного программирования. По умолчанию для классификации используется тип C-classification, где задача сформулирована в следующей форме:
+\begin{align*}
+\begin{cases}
+\mathbf{e}^\mathrm{T}\mathbf{\alpha} - \frac{1}{2}\mathbf{\alpha}^\mathrm{T}Q\mathbf{\alpha}\rightarrow \max\limits_{\mathbf{\alpha}}, & Q_{ij} = y_iy_j K(\mathbf{x}_i, \mathbf{x}_j) =  y_iy_j\phi(\mathbf{x}_i)^\mathrm{T}\phi(\mathbf{x}_j)\\
+\mathbf{y}^\mathrm{T}\mathbf{\alpha} = 0, \\
+0 \leq \alpha_i \leq C, & i = 1,\ldots, n.
+\end{cases}
+\end{align*}
+Такая задача эквивалентна задаче минимизации и регуляризации эмпирического риска 
+\begin{align*}
+\sum\limits_{i = 1}^{p}\left(1 - M_i(\beta, \beta_0)\right)_{+} + \frac{1}{2C}\|\beta\|_2^2 \rightarrow \min\limits_{\beta, \beta_0}.
+\end{align*}
+(Здесь 1/(2С) оказыватся эквивалентной обозначению $\eta$ в слайдах). Отсюда интерпретация, что чем больше C, тем слабее регуляризация (меньше опорных векторов, уже граница), чем меньше -- тем сильнее регуляризация, больше опорных векторов, шире граница; больше векторов, которым разрешается оказаться по другую сторону границы, но не в другом классе (опорные-нарушители у Воронцова).
+
+* kernel	-- Ядро. Поддерживаются следующие ядра:
+
+* * linear:
+\[\mathbf{u}^\mathrm{T}\mathbf{v},\]
+* * polynomial:
+\[(\gamma \mathbf{u}^\mathrm{T}\mathbf{v} + c_0)^d,\]
+* * radial basis:
+\[e^{-\gamma |u - v|^2}\]
+
+* * sigmoid:
+\[\tanh(\gamma \mathbf{u}^\mathrm{T} \mathbf{v} + c_0)\]
+
+* degree -- параметр полиномиального ядра (default: 3)
+* gamma -- необходимый паратетр для всех ядер кроме линейного (default: 1/(data dimension))
+* coef0 -- прарметр полиномиального и сигмоидного ядра (default: 0)
+* cost -- цена нарушения ограничений (default: 1). Это константа C в формулировке задачи. Чем болше С -- тем больше штраф,тем уже граница.
+
+* nu -- параметр для $\nu$-формулировки задачи
+* class.weights -- вектор весов групп (default: 1)
+* cachesize -- кэш в Мб (default: 40)
+* tolerance -- условие остановки (default: 0.001)
+* epsilon -- epsilon in the insensitive-loss function (default: 0.1)
+* shrinking -- option whether to use the shrinking-heuristics (default: TRUE)
+* cross -- если больше 0, то производится k-fold cross validation
+* fitted -- включать ли оценки в модель (default: TRUE)
+* probability -- разрешать ли предсказания по вероятности
+* ... -- дополнительные параметры для svm.default
+* subset -- вектор индексов тренировочной выборки
+* na.action -- функция, определяющая, что делать с NA.
+
+#Линейно неразделимые данные
+
+Данные -- Orange Juice Data
+
+Данные содержат 1070 покупок апельсинового сока. Покупатели выбирали либо Citrus Hill, либо Minute Maid. 
+Всего 18 признаков:
+
+* Purchase -- фактор, означающий, какая марка сока была куплена
+* WeekofPurchase -- неделя покупки (сколько продано за неделю)
+* Store ID -- Store ID
+* PriceCH -- цена сока CH
+* PriceMM -- цена сока MM
+* DiscCH -- скидка на сок CH
+* DiscMM -- скидка на сок MM
+* SpecialCH -- факторный признак, было ли специальное предложение на сок
+* SpecialMM -- факторный признак, было ли специальное предложение на сок
+* LoyalCH -- лояльность покупателя бренду CH
+* SalePriceMM -- цена продажи сока MM (магазином)
+* SalePriceCH -- цена продажи сока CH (магазином)
+* PriceDiff -- розничная цена MM - розничная цена CH
+* Store7 -- фактор, произошла ли покупка в магазине Store 7
+* PctDiscMM -- процент скидки на MM
+* PctDiscСH -- процент скидки на CH
+* ListPriceDiff -- List price of MM - list price of CH
+* STORE -- в каком из пяти магазинов произошла покупка
+
+
+```{r}
+dat <- OJ
+str(dat)
+```
+
+Матриксплот без признаков вида ID магазина и коллинеарных признаков (например PctDiscMM коллинеарен DiscMM).
+```{r, fig.width=15, fig.height=15}
+factor.colors <- palette(c(rgb(134,82,187, maxColorValue=255),
+    rgb(148,195,92, maxColorValue=255)))
+pairs.panels(dat[,-c(3,6,7, 8, 9, 15, 16)],
+               bg=factor.colors[dat$Purchase],
+               pch=21,
+               lm=TRUE, 
+               lwd = 1,
+               ellipses = FALSE)
+```
+Есть подозрения, что лояльности достаточно, чтобы хорошо поделить группы.
+
+```{r}
+set.seed(100)
+train.idx <- sample(seq(from = 1, to = nrow(dat)), size = floor(0.7 * nrow(dat)))
+train.df <- dat[train.idx,-c(3, 6, 7, 8,9,11,14,15,16,18)]
+test.df <- dat[-train.idx,-c(3, 6, 7, 8,9,11,14,15,16,18)]
+```
+
+```{r}
+svmfit <- svm(Purchase ~., data = train.df, kernel = "linear", cost = 100)
+plot(svmfit, train.df,  LoyalCH ~ WeekofPurchase)
+```
+```{r}
+summary(svmfit)
+```
+Проверим на тестовой выборке.
+```{r}
+svm.pred <- predict(svmfit, newdata = test.df)
+```
+Confusion matrix:
+```{r}
+tb <- table(svm.pred, test.df$Purchase)
+print(tb)
+```
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+
+## Сравнение с LDA
+
+```{r}
+oj.lda <- lda(Purchase ~., data = train.df, prior = c(0.5,0.5))
+oj.lda
+```
+
+Проверим на тестовой выборке
+```{r}
+oj.lda.predict <- predict(oj.lda, test.df[,-1])$class
+```
+
+Confusion matrix:
+```{r}
+tb <- table(oj.lda.predict, test.df$Purchase)
+print(tb)
+```
+
+
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+
+Результат чуть хуже SVM с линейным ядром и "произвольным" (никак не подбиравшимся) параметром C.
+
+##Kernel-trick + CV
+Подберем ядро и параметры кроссвалидацией с помощью функции tune().
+
+Линейное ядро.
+```{r}
+set.seed(100)
+tune.linear <- tune(svm, Purchase ~., data = train.df, kernel = "linear", ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 50, 100)), scale = TRUE)
+summary(tune.linear)
+tune.linear$best.model
+```
+
+Используем выбранную модель для предсказания классов на тестовой выборке.
+```{r}
+svm.linear.pred <- predict(tune.linear$best.model, newdata = test.df)
+```
+
+Confusion matrix:
+```{r}
+tb <- table(svm.linear.pred, test.df$Purchase)
+print(tb)
+```
+
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+
+
+Radial basis
+```{r}
+tune.radial <- tune(svm, Purchase ~., data = train.df, kernel = "radial", ranges = list(cost = c(0.01, 0.1, 1, 5, 10, 50), gamma = c(0.1,0.5, 1, 2, 3, 4)), scale = TRUE)
+summary(tune.radial)
+tune.radial$best.model
+```
+
+```{r}
+svm.radial.pred <- predict(tune.radial$best.model, newdata = test.df)
+```
+Confusion matrix:
+```{r}
+tb <- table(svm.radial.pred, test.df$Purchase)
+print(tb)
+```
+
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+
+
+Sigmoid
+```{r}
+tune.sigmoid <- tune(svm, Purchase ~., data = train.df, kernel = "sigmoid", ranges = list(cost = c(0.01, 0.1, 1, 5, 10, 50), gamma = c(0.5, 1, 2, 3, 4)), scale = TRUE)
+summary(tune.sigmoid)
+tune.sigmoid$best.model
+```
+
+```{r}
+svm.sigmoid.pred <- predict(tune.sigmoid$best.model, newdata = test.df)
+```
+
+Confusion matrix:
+```{r}
+tb <- table(svm.sigmoid.pred, test.df$Purchase)
+print(tb)
+```
+
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+#Сравнение ядер на модельных данных
+##Линейное должно оказаться лучше RBF
+
+```{r}
+set.seed(100)
+x <- matrix(c(runif(100), runif(50,max = 0.55), runif(50,min = 0.45)), ncol = 2, nrow = 100)
+y <- c(rep(1, 50), rep(2,50))
+simple.dat <- data.frame(x = x, y = as.factor(y))
+plot(simple.dat[,c(2,1)], col = c("red", "black")[y])
+```
+Линейное
+```{r}
+set.seed(100)
+tune.model.linear <- tune(svm, y ~ ., data = simple.dat, kernel = "linear", ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 50, 100)), scale = TRUE)
+plot(tune.model.linear$best.model, simple.dat)
+```
+Тестовые данные
+```{r}
+set.seed(100)
+x.test <- matrix(c(runif(100), runif(50,max = 0.55), runif(50,min = 0.45)), ncol = 2, nrow = 100)
+y.test <- c(rep(1, 50), rep(2,50))
+```
+
+
+Average accuracy
+```{r}
+svm.model.pred <- predict(tune.model.linear$best.model, newdata = x.test)
+tb <- table(svm.model.pred, y.test)
+mean(diag(prop.table(tb, 1)))
+```
+
+
+RBF
+```{r}
+set.seed(100)
+tune.model.rbf <- tune(svm, y ~ ., data = simple.dat, kernel = "radial", ranges = list(cost = c(0.01, 0.1, 1, 5, 10, 50), gamma = c(0.1, 0.5, 1, 2, 3, 4)), scale = TRUE)
+plot(tune.model.rbf$best.model, simple.dat)
+```
+
+
+Average accuracy
+```{r}
+svm.model.pred <- predict(tune.model.rbf$best.model, newdata = x.test)
+tb <- table(svm.model.pred, y.test)
+mean(diag(prop.table(tb, 1)))
+```
+
+
+##RBF должно оказаться лучше линейного
+```{r}
+set.seed(100)
+insideR <- runif(100, max = 0.55)
+insideA <- runif(100, max = 2*pi)
+insideX <- insideR * cos(insideA)
+insideY <- insideR * sin(insideA)
+
+outsideR <- runif(100, min = 0.45, max = 1)
+outsideA <- runif(100, max = 2*pi)
+outsideX <- outsideR * cos(outsideA)
+outsideY <- outsideR * sin(outsideA)
+
+
+x <- matrix(c(insideX, outsideX, insideY, outsideY), ncol = 2, nrow = 200)
+y <- c(rep(1, 100), rep(2,100))
+simple.dat <- data.frame(x = x, y = as.factor(y))
+plot(simple.dat[,c(2,1)], col = c("red", "black")[y], xlim = c(-1, 1), ylim = c(-1,1))
+```
+
+Линейное
+```{r}
+set.seed(100)
+tune.model.linear <- tune(svm, y ~ ., data = simple.dat, kernel = "linear", ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 50, 100)), scale = TRUE)
+plot(tune.model.linear$best.model, simple.dat)
+```
+
+Тестовые данные:
+```{r}
+set.seed(100)
+insideR.test <- runif(100, max = 0.55)
+insideA.test <- runif(100, max = 2*pi)
+insideX.test <- insideR.test * cos(insideA.test)
+insideY.test <- insideR.test * sin(insideA.test)
+
+outsideR.test <- runif(100, min = 0.45, max = 1)
+outsideA.test <- runif(100, max = 2*pi)
+outsideX.test <- outsideR.test * cos(outsideA.test)
+outsideY.test <- outsideR.test * sin(outsideA.test)
+```
+
+
+Average accuracy
+```{r}
+x.test <- matrix(c(insideX.test, outsideX.test, insideY.test, outsideY.test), ncol = 2, nrow = 200)
+y.test <- c(rep(1, 100), rep(2,100))
+svm.model.pred <- predict(tune.model.linear$best.model, newdata = x.test)
+tb <- table(svm.model.pred, y.test)
+mean(diag(prop.table(tb, 1)))
+```
+
+
+RBF
+```{r}
+set.seed(100)
+tune.model.rbf <- tune(svm, y ~ ., data = simple.dat, kernel = "radial", ranges = list(cost = c(0.01, 0.1, 1, 5, 10, 50), gamma = c(0.1, 0.5, 1, 2, 3, 4)), scale = TRUE)
+plot(tune.model.rbf$best.model, simple.dat)
+```
+
+Average accuracy
+```{r}
+svm.model.pred <- predict(tune.model.rbf$best.model, newdata = x.test)
+tb <- table(svm.model.pred, y.test)
+mean(diag(prop.table(tb, 1)))
+```
+
+
+# Multiclass SVM
+
+Данные об экспрессии генов четырех типов опухолей.
+
+* xtrain -- тренировочная выборка (2308 признаков и 63 наблюдения) 
+* xtest -- тестовая выборка (2308 признаков и 20 наблюдений)
+* ytrain -- 4 группы "EWS", "BL-NHL", "NB" и "RMS"
+* ytest -- 4 группы "EWS", "BL-NHL", "NB", "RMS"
+
+Воспользуемся функцией SVM из пакета gmum.r. Среди ее аргументов:
+
+* x -- матрица данных без ответов
+* y -- вектор с ответами (отметками классов)
+* class.type -- one vs. all или one vs. one
+* C -- trade-off между регуляризацией и строгостью классификации. Можно рассматривать как обратное к коэффициенту перед регулирующим слагаемым, подберем кроссвалидацией.
+* kernel -- ядро
+* gamma, degree, coef0 -- параметры ядер
+
+
+## One-vs-one
+
+```{r}
+svm.gen.fit.ovo <- SVM(x = Khan$xtrain, y = as.factor(Khan$ytrain), class.type="one.versus.one", kernel = "linear", C = 0.001, verbosity=0)
+svm.gen.ovo.pred <- predict(svm.gen.fit.ovo, Khan$xtest)
+```
+Confusion matrix:
+```{r}
+tb <- table(svm.gen.ovo.pred, as.factor(Khan$ytest))
+print(tb)
+```
+
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+
+## One-vs-all
+
+
+```{r}
+svm.gen.fit.ova <- SVM(x = Khan$xtrain, y = as.factor(Khan$ytrain), class.type="one.versus.all", kernel = "linear", C = 0.001, verbosity=0)
+svm.gen.ova.pred <- predict(svm.gen.fit.ova, Khan$xtest)
+```
+Confusion matrix:
+```{r}
+tb <- table(svm.gen.ova.pred, as.factor(Khan$ytest))
+print(tb)
+```
+
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+
+Оказалось, что One-vs-all подход дал лучший результат.
+
+# Regularized SVM 
+
+В этом пункте вернемся к данным о продажах апельсинового сока.
+
+Для построения регуляризованного SVM воспользуемся функцией Liblinear из одноименного пакета. Среди ее аргументов:
+
+* data -- матрица данных
+* type -- тип регуляризации. Поддерживаются L1 и L2 для L1 и L2 функций потерь
+* target -- вектор ответов
+* cost -- цена нарушения ограничений. 
+* cross -- параметр k-fold cross-validation
+
+## L1
+
+```{r}
+set.seed(100)
+tryCosts <- c(0.001, 0.01, 0.1, 1, 5, 10, 50, 100, 1000)
+bestCost <- NA
+bestAcc <- 0
+    
+for(co in tryCosts){
+  acc <- LiblineaR(data=scale(train.df[,-1]),target=as.factor(train.df$Purchase),type=5,cost=co,cross=10)
+    cat("Results for C = ",co," : ",acc," accuracy.\n",sep="")
+    if(acc>bestAcc){
+      bestCost <- co
+      bestAcc <- acc
+    }
+}
+    
+cat("Best cost is:",bestCost,"\n")
+cat("Best accuracy is:",bestAcc,"\n")
+```
+
+Построим модель с подобранным параметром cost
+```{r}
+svm.l1.fit <- LiblineaR(data = scale(train.df[,-1]), type = 5, target = as.factor(train.df$Purchase), cost = bestCost)
+```
+
+Посмотрим на веса признаков
+```{r}
+svm.l1.fit$W
+```
+Регуляризация убрала 4 признака.
+
+Проверим на тестовой выборке
+```{r}
+svm.l1.pred <- predict(svm.l1.fit, scale(test.df[,-1]))
+```
+Confusion matrix:
+```{r}
+tb <- table(svm.l1.pred$predictions, as.factor(test.df$Purchase))
+print(tb)
+```
+
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+
+## L2
+
+```{r}
+set.seed(100)
+tryCosts <- c(0.001, 0.01, 0.1, 1, 5, 10, 50, 100, 1000)
+bestCost <- NA
+bestAcc <- 0
+    
+for(co in tryCosts){
+  acc <- LiblineaR(data=scale(train.df[,-1]),target=as.factor(train.df$Purchase),type=1,cost=co,cross=10)
+    cat("Results for C = ",co," : ",acc," accuracy.\n",sep="")
+    if(acc>bestAcc){
+      bestCost <- co
+      bestAcc <- acc
+    }
+}
+    
+cat("Best cost is:",bestCost,"\n")
+cat("Best accuracy is:",bestAcc,"\n")
+```
+
+Построим модель с параметрами, выбранными скользящим контролем.
+```{r}
+svm.l2.fit <- LiblineaR(data = scale(train.df[,-1]), target = as.factor(train.df$Purchase),  type = 1, cost = bestCost)
+```
+
+Посмотрим на веса признаков
+```{r}
+svm.l2.fit$W
+```
+Ни один признак не обнулился.
+
+Проверим на тестовой выборке.
+```{r}
+svm.l2.pred <- predict(svm.l2.fit, scale(test.df[,-1]))
+```
+Confusion matrix:
+```{r}
+tb <- table(svm.l2.pred$predictions, as.factor(test.df$Purchase))
+print(tb)
+```
+Average classification accuracy:
+```{r}
+mean(diag(prop.table(tb, 1)))
+```
+
+
+# Support Vector Regression
+
+Прямая задача svr формулируется так:
+\begin{align*}
+\begin{cases}
+\frac{1}{2}\mathbf{\beta}^\mathrm{T}\mathbf{\beta} + C\sum\limits_{i = 1}^n (\xi_i^{+} + \xi_i^{-}) \rightarrow \min\limits_\mathbf{\beta}\\
+\xi_i^{+}, \xi_i^{-} \geq 0\\
+y_i - \mathbf{\beta}^\mathrm{T}\mathbf{x}_i - \beta_0 \leq \varepsilon + \xi_i^{+}\\
+-y_i + \mathbf{\beta}^\mathrm{T}\mathbf{x}_i + \beta_0 \leq \varepsilon + \xi_i^{-}
+\end{cases}
+\end{align*}
+Двойственная к ней:
+\begin{align*}
+\begin{cases}
+\frac{1}{2}(\mathbf{\alpha}^{-} - \mathbf{\alpha}^{+})^\mathrm{T}Q(\mathbf{\alpha}^{-} - \mathbf{\alpha}^{+}) + \varepsilon \sum\limits_{i = 1}^n (\alpha_i^{-} + \alpha_i^{+}) + \sum\limits_{i = 1}^n y_i(\alpha_i^{-} - \alpha_i^{+}) \rightarrow \min\limits_{\mathbf{\alpha}^{-}, \mathbf{\alpha}^{+}}\\
+\mathbf{e}^\mathrm{T}(\mathbf{\alpha}^{-} - \mathbf{\alpha}^{+}) = 0\\
+0 \leq \alpha_i^{-} - \alpha_i^{+} \leq C, i = 1, \ldots, n
+\end{cases}
+\end{align*}
+Ее решение:
+\begin{align*}
+y(\mathbf{x}) = \sum\limits_{i = 1}^n (-\alpha_i^{-} + \alpha_i^{+})K(\mathbf{x}_i, \mathbf{x}) + \beta_0
+\end{align*}
+
+Строить SVR можно снова с помощью функции svm из пакета e1071.
+
+Для примера рассмотрим данные, с которыми мы уже работали на первом семинаре.
+
+Hitters -- Major League Baseball Data from the 1986 and 1987 seasons.
+
+* AtBat --
+Number of times at bat in 1986
+
+* Hits --
+Number of hits in 1986
+
+* HmRun --
+Number of home runs in 1986
+
+* Runs --
+Number of runs in 1986
+
+* RBI --
+Number of runs batted in in 1986
+
+* Walks --
+Number of walks in 1986
+
+* Years --
+Number of years in the major leagues
+
+* CAtBat --
+Number of times at bat during his career
+
+* CHits --
+Number of hits during his career
+
+* CHmRun --
+Number of home runs during his career
+
+* CRuns --
+Number of runs during his career
+
+* CRBI --
+Number of runs batted in during his career
+
+* CWalks --
+Number of walks during his career
+
+* League --
+A factor with levels A and N indicating player's league at the end of 1986
+
+* Division --
+A factor with levels E and W indicating player's division at the end of 1986
+
+* PutOuts --
+Number of put outs in 1986
+
+* Assists --
+Number of assists in 1986
+
+* Errors --
+Number of errors in 1986
+
+* Salary --
+1987 annual salary on opening day in thousands of dollars
+
+* NewLeague --
+A factor with levels A and N indicating player's league at the beginning of 1987
+
+
+Делаем все признаки numeric и убираем NA.
+```{r}
+hit <- na.omit(Hitters)
+x <- model.matrix(Salary~.,hit)[,-1]
+y <- hit$Salary
+```
+
+
+Делим на тренировочную и тестовую выборки.
+```{r}
+set.seed(100)
+train <- sample(1: nrow(x), nrow(x)/2)
+test <- - train 
+x.train <- x[train,]
+x.test <- x[test,]
+y.train <- x[train]
+y.test <- y[test]
+```
+
+Посмотрим на результат лучшей из рассматривавшихся моделей.
+```{r}
+set.seed(100)
+cv.out <- cv.glmnet(x.train,y.train,alpha =0)
+bestlam <- cv.out$lambda.min
+ridge.mod <- glmnet(x.train,y.train, alpha=0, lambda=bestlam, standardize=TRUE)
+ridge.pred <- predict(ridge.mod, s=bestlam, newx=x.test)
+mean(sqrt((ridge.pred - y.test)^2))
+```
+
+Теперь построим SVR.
+```{r}
+tune.linear.svr <- tune(svm, train.x = x.train, train.y = y.train, kernel = "linear", ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 50, 100)))
+summary(tune.linear.svr)
+tune.linear.svr$best.model
+```
+MSE
+```{r}
+svr.linear.pred <- predict(tune.linear.svr$best.model, x.test)
+mean(sqrt((svr.linear.pred - y.test)^2))
+```
+Получилось чуть лучше ridge regression.
