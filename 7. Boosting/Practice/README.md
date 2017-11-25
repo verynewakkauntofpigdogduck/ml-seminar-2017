@@ -1,4 +1,4 @@
-# Обучение с учителем. Дискриминантный анализ. Логистическая регрессия. Feature selection и extraction
+# Композиция методов. Бустинг
 
 [Страница курса на wiki](http://statmod.ru/wiki/study:fall2017:ml_theory)
 
