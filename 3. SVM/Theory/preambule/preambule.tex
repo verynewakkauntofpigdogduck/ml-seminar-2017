@@ -1,0 +1,79 @@
+\documentclass[unicode,10pt]{beamer}
+\usepackage{hyperref}
+\usepackage{cmap}                
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{biblatex}
+\usepackage{mathtext}
+\usepackage[english, russian]{babel}
+\usepackage{commath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{mathtools}
+\usepackage{indentfirst}
+\usepackage{geometry}
+\usepackage{tikz}
+\usepackage{tkz-euclide}
+\usetkzobj{all}
+\usetikzlibrary{arrows,positioning}
+\usetikzlibrary{shapes,snakes}
+\usetikzlibrary{shapes.multipart}
+\usepackage{graphicx}
+\usepackage{epstopdf}
+\usepackage{subcaption}
+\usepackage{caption}
+\usepackage{setspace}
+\usepackage{float}
+\usepackage{tcolorbox}
+\captionsetup{justification=centering}
+\DeclareMathOperator*{\argmax}{argmax}
+\bibliography{slides.bib}
+\mode<presentation>
+{
+	\usetheme{Warsaw}
+	\setbeamercovered{transparent}
+	\setbeamertemplate{bibliography item}[text]
+}
+
+\newcommand*\diff{\mathop{}\!\mathrm{d}}
+\providecommand{\TODO}{\fcolorbox{red}{red}{\large{TODO}}}
+\DeclareMathOperator{\upd}{upd}
+\DeclareMathOperator{\eol}{eol}
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+\providecommand{\err}[1]{$\mathcal{#1}$}
+\providecommand{\ev}[1]{$\mathbb{#1}$}
+\providecommand{\TODO}[1]{\fcolorbox{red}{red}{\large{FIXME}:#1}}
+\setbeamercovered{invisible}
+\setbeamertemplate{navigation symbols}{}
+\usepackage{physics}
+
+\addtobeamertemplate{navigation symbols}{}{%
+    \usebeamerfont{footline}%
+    \usebeamercolor[fg]{footline}%
+    \hspace{1em}%
+    \insertframenumber/\inserttotalframenumber
+}
+
+\setlength{\parindent}{1em}
+\DeclareMathOperator{\sign}{sign}
+\newtheorem{thr}{Теорема}[section]
+\addtobeamertemplate{frametitle}{\setlength{\parindent}{0em}}{}
+\addtobeamertemplate{block begin}{\setlength{\parindent}{0em}}{\setlength{\parindent}{2em}}
+\addtobeamertemplate{block example begin}{\setlength{\parindent}{0em}}{\setlength{\parindent}{2em}}
+
+\makeatletter
+\newenvironment{ecases}{%
+  \matrix@check\ecases\env@ecases
+}{%
+  \endarray\right.%
+}
+\def\env@ecases{%
+  \let\@ifnextchar\new@ifnextchar
+  \left.
+  \def\arraystretch{1.2}%
+  \array{@{}l@{\quad}l@{}}%
+}
+
