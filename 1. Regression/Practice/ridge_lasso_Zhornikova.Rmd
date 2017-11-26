@@ -1,0 +1,318 @@
+---
+title: "Regression - practice"
+author: "Polina Zhornikova"
+date: '26 сентября 2017 г '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ISLR)
+library(psych)
+library(mixlm)
+library(lattice)
+library(ggplot2)
+library(reshape2)
+library(MASS)
+library(clue)
+library(glmnet)
+library(parcor)
+library(pls)
+
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+panel.hist <- function(x, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5) )
+    h <- hist(x, plot = FALSE)
+    breaks <- h$breaks; nB <- length(breaks)
+    y <- h$counts; y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, col = "cyan", ...)
+}
+```
+
+Пакет для данных:
+
+```{r, message=FALSE}
+library(ISLR)
+```
+
+
+Рассмотрим данные Hitters -- Major League Baseball Data from the 1986 and 1987 seasons.
+
+* AtBat --
+Number of times at bat in 1986
+
+* Hits --
+Number of hits in 1986
+
+* HmRun --
+Number of home runs in 1986
+
+* Runs --
+Number of runs in 1986
+
+* RBI --
+Number of runs batted in in 1986
+
+* Walks --
+Number of walks in 1986
+
+* Years --
+Number of years in the major leagues
+
+* CAtBat --
+Number of times at bat during his career
+
+* CHits --
+Number of hits during his career
+
+* CHmRun --
+Number of home runs during his career
+
+* CRuns --
+Number of runs during his career
+
+* CRBI --
+Number of runs batted in during his career
+
+* CWalks --
+Number of walks during his career
+
+* League --
+A factor with levels A and N indicating player's league at the end of 1986
+
+* Division --
+A factor with levels E and W indicating player's division at the end of 1986
+
+* PutOuts --
+Number of put outs in 1986
+
+* Assists --
+Number of assists in 1986
+
+* Errors --
+Number of errors in 1986
+
+* Salary --
+1987 annual salary on opening day in thousands of dollars
+
+* NewLeague --
+A factor with levels A and N indicating player's league at the beginning of 1987
+
+
+```{r}
+str(Hitters)
+```
+
+
+Делаем все признаки numeric и убираем NA.
+
+```{r}
+hit <- na.omit(Hitters)
+x <- model.matrix(Salary~.,hit)[,-1]
+y <- hit$Salary
+```
+
+Наблюдений стало:
+
+```{r}
+dim(x)[1]
+```
+
+Делим на тренировочную и тестовую выборки.
+
+```{r}
+set.seed(1)
+train <- sample(1: nrow(x), nrow(x)/2)
+test <- - train 
+y.test <- y[test]
+```
+
+Для ridge regression и lasso используем пакет glmnet.
+
+```{r, message=FALSE}
+library(glmnet)
+```
+
+В glmnet: alpha = 0 -- ridge regression, alpha = 1 -- lasso.
+
+### Ridge regression
+
+С помощью cross-validation выбираем значение lambda.
+
+```{r}
+set.seed(1)
+cv.out <- cv.glmnet(x[train,],y[train],alpha =0)
+plot(cv.out)
+bestlam <- cv.out$lambda.min
+bestlam
+```
+
+
+Применяем ridge regression.
+
+```{r}
+ridge.mod <- glmnet(x[train ,],y[train], alpha=0, lambda=bestlam, standardize=TRUE)
+ridge.pred <- predict(ridge.mod, s=bestlam, newx=x[test,])
+```
+
+Ошибка на тестовой выборке.
+```{r}
+mean(sqrt((ridge.pred - y.test)^2))
+```
+
+Посмотрим на сами коэффициенты, они все ненулевые.
+
+```{r}
+predict(ridge.mod, type='coefficients', s=bestlam)[1:20,]
+```
+
+### Lasso
+
+С помощью cross-validation выбираем значение lambda.
+
+```{r}
+set.seed(1)
+cv.out <- cv.glmnet(x[train,],y[train],alpha =1)
+plot(cv.out)
+bestlam <- cv.out$lambda.min
+bestlam
+```
+
+
+Применяем Lasso
+
+```{r}
+lasso.mod <- glmnet(x[train ,],y[train],alpha=1, lambda=bestlam, standardize=TRUE)
+lasso.pred <- predict(lasso.mod, s=bestlam, newx=x[test ,])
+```
+
+Ошибка на тестовой выборке.
+```{r}
+mean(sqrt((lasso.pred - y.test)^2))
+```
+
+Посмотрим на сами коэффициенты, много нулевых коэффициентов. 
+
+```{r}
+predict(lasso.mod, type = 'coefficients',s=bestlam)[1:20,]
+```
+
+### Simple linear regression
+
+```{r}
+lm.pred = predict(ridge.mod, s=0, newx=x[test,], exact=T)
+mean(sqrt((lm.pred - y.test)^2))
+```
+
+### Модельный пример, когда Ridge regression лучше Lasso.
+
+Можно ожидать, что Ridge regression будет лучше работать, когда y зависит от многих признаков, имеющих примерно одинаковые коэффициенты.
+
+```{r}
+set.seed(17)
+y <- 0
+x <- matrix(0, 100, 50)
+for (i in (1:50)){
+  x[,i] <- rnorm(100)
+}
+y <- apply(x, 1, sum)
+set.seed(1)
+train <- sample(1: nrow(x), nrow(x)/2)
+test <- - train 
+y.test <- y[test]
+```
+
+####Rigde regression
+
+```{r}
+set.seed(1)
+cv.out <- cv.glmnet(x[train,],y[train],alpha =0)
+bestlam <- cv.out$lambda.min
+ridge.mod <- glmnet(x[train ,],y[train],alpha=0, lambda=bestlam, standardize=TRUE)
+ridge.pred <- predict(ridge.mod, s=bestlam, newx=x[test ,])
+```
+
+Ошибка на тестовой выборке.
+```{r}
+mean(sqrt((ridge.pred - y.test)^2))
+```
+
+####Lasso
+
+```{r}
+set.seed(1)
+cv.out <- cv.glmnet(x[train,],y[train],alpha =1)
+bestlam <- cv.out$lambda.min
+lasso.mod <- glmnet(x[train ,],y[train],alpha=1, lambda=bestlam, standardize=TRUE)
+lasso.pred <- predict(lasso.mod, s=bestlam, newx=x[test ,])
+```
+
+Ошибка на тестовой выборке.
+```{r}
+mean(sqrt((lasso.pred - y.test)^2))
+```
+
+
+### Модельный пример, когда Lasso лучше Ridge regression.
+
+Можно ожидать, что Lasso будет лучше работать, когда имеется много признаков с маленькими значениями коэффициентов (мало информативных признаков).
+
+```{r}
+set.seed(17)
+y <- 0
+x <- matrix(0, 100, 50)
+x[,1] <- (1:100)
+for (i in (2:46)){
+  x[,i] <- rnorm(100) * 0.000001
+}
+for (i in (47:50)){
+  x[,i] <- rnorm(100) 
+}
+y <- apply(x, 1, sum)
+set.seed(1)
+train <- sample(1: nrow(x), nrow(x)/2)
+test <- - train 
+y.test <- y[test]
+```
+
+####Rigde
+
+```{r}
+set.seed(1)
+cv.out <- cv.glmnet(x[train,],y[train],alpha =0)
+bestlam <- cv.out$lambda.min
+ridge.mod <- glmnet(x[train ,],y[train],alpha=0, lambda=bestlam, standardize=TRUE)
+ridge.pred <- predict(ridge.mod, s=bestlam, newx=x[test ,])
+```
+
+Ошибка на тестовой выборке.
+```{r}
+mean(sqrt((ridge.pred - y.test)^2))
+```
+
+####Lasso
+
+```{r}
+set.seed(1)
+cv.out <- cv.glmnet(x[train,],y[train],alpha =1)
+bestlam <- cv.out$lambda.min
+lasso.mod <- glmnet(x[train ,],y[train],alpha=1, lambda=bestlam,
+thresh=1e-7, standardize=TRUE)
+lasso.pred <- predict(lasso.mod, s=bestlam, newx=x[test ,])
+```
+
+Ошибка на тестовой выборке.
+```{r}
+mean(sqrt((lasso.pred - y.test)^2))
+```
