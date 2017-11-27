@@ -1,0 +1,204 @@
+---
+title: "LDA, QDA, LR"
+author: "Salnikov Dmitry"
+date: '3 октября 2017г '
+output:
+html_document: default
+---
+Возьмем данные по уровню преступности в пригородах Бостона и попробуем узнать, какие из факторов сильнее влияют на него.
+
+Структура данных Boston:
+```{r}
+set.seed(1)
+library('MASS')
+library("glmnet")
+attach(Boston)
+str(Boston)
+```
+Введем бинарный признак cr, делящий данные на 2 равномощных класса посредством сравнения значений признака crim с его медианой:
+```{r}
+cr <- crim > median(crim)
+```
+
+<!-- # Logistic regression -->
+<!-- Построим сначала логистическую регресию по полному набору признаков, пользуясь функцией glm: -->
+<!-- ```{r} -->
+<!-- log.full <- glm(cr~.-crim, data = Boston, family = binomial) -->
+<!-- summary(log.full) -->
+<!-- ``` -->
+
+# LR
+
+Проведем пошаговую регрессию (backward), основанную на информационном критерии Акаике, реализованную функцией stepAIC пакета leaps (это один из примеров feature selection):
+
+```{r}
+library('leaps')
+log.full <- glm(cr~.-crim, data = Boston, family = binomial)
+stepAIC(log.full, trace = FALSE)
+```
+
+Значимый вклад в предсказание переменной cr вносят признаки zn, nox, age, dis, rad, tax, ptratio, black и medv.
+Построим график зависимости признаков, красным цветом обозначим высокий уровень преступности:
+
+```{r}
+pairs(~zn+nox+age+dis+rad+tax+ptratio+black+medv,data=Boston, col = cr+1)
+```
+
+Построим логистическую регрессию по этим признакам:
+
+```{r}
+log.full2 <- glm(cr~zn+nox+age+dis+rad+tax+ptratio+black+medv, data = Boston, family = binomial)
+summary(log.full2)
+```
+
+Сделаем кросс-валидацию.
+
+```{r, warning=FALSE}
+library('boot')
+1 - cv.glm(data.frame(cr, zn, nox, age, dis, rad, tax, ptratio, black, medv), log.full2, K = length(cr))$delta[1]
+```
+
+Попробуем применить lasso. Зададим множество значений $\lambda$.
+
+```{r}
+grid <- 10^seq(10,-2,length=1000)
+cv.res <- cv.glmnet(model.matrix(cr~zn+nox+age+dis+rad+tax+ptratio+black+medv, data = Boston)[, -1], cr, alpha = 1, lambda = grid)
+plot(cv.res)
+cv.res$lambda.min
+```
+
+Как видно, оптимальным значением $\lambda$ было выбрано минимальное заданное. Это говорит, что lasso применять не нужно.
+
+Feature extraction:
+Попробуем выделить скрытые признаки с помощью главных компонент и построить по ним логистическую регрессию. Данные предварительно надо пронормировать, так как они измерены в разных шкалах,за это отвечает параметр scale.
+
+```{r}
+pk <- prcomp(Boston[,-1], scale. = TRUE)
+```
+
+Существует несколько общепризнанных методов отбора главных компонент, тут мы воспользуемся правилом Кайзера, так как у него есть тенденция завышать 
+количество значимых компонент. Заключается он в сравнении дисперсий компонент со средним значением дисперсии, в нашем случае с 1.
+
+```{r}
+plot(pk)
+curve(1+0*x, add = TRUE, col = 'red')
+```
+
+Правило выбрало первые 3 главных компоненты. Посмотрим на них:
+
+```{r}
+pkx <- as.data.frame(cbind(cr, pk$x[,1:3]))
+pkx[,1] <- as.factor(pkx[,1])
+pk$rotation[,1:3]
+library('ggfortify')
+autoplot(pk, data = cbind(cr, Boston[,-1]), colour = 'cr',
+         loadings = TRUE,  loadings.colour = 'blue',
+         loadings.label = TRUE, loadings.label.size = 3)
+library(GGally)
+ggpairs(pkx, aes(colour = cr, alpha = 0.4), lower = list(combo = wrap(ggally_facethist, binwidth = 0.5)))
+```
+
+Построим по ним логистическую регрессию:
+
+```{r}
+log.full3 <- glm(cr~PC1+PC2+PC3, data = pkx, family = binomial)
+summary(log.full3)
+```
+
+Как видим, все 3 компоненты оказались значимы. 
+Проведем кросс-валидацию:
+
+```{r}
+1 - cv.glm(pkx, log.full3, K = length(cr))$delta[1]
+```
+
+получилось чуть хуже, однако предикторов всего 3.
+
+# DA
+Проведем теперь линейный дискриминантный анализ на наборе признаков, полученных с помощью AIC.
+
+```{r}
+library('klaR')
+lda.full = lda(cr~zn+nox+age+dis+rad+tax+ptratio+black+medv, data = Boston)
+lda.full
+mean(lda(cr~zn+nox+age+dis+rad+tax+ptratio+black+medv, data = Boston, CV=TRUE)$class == cr)
+```
+
+Точность кроссвалидации ниже, чем при логистической регрессии.
+
+Проведем пошаговый дискриминантный анализ, используя функцию greedy.wilks из пакета klaR:
+```{r}
+greedy.wilks(cr~.-crim, data = Boston, niveau = .1)
+f.cr <- as.factor(cr)
+ggpairs(data.frame(f.cr, Boston), columns = c('zn', 'nox', 'age', 'rad', 'medv'), aes(colour = f.cr, alpha = 0.4), lower = list(combo = wrap(ggally_facethist, binwidth = 0.5)))
+```
+
+Процедура выявила пять признаков: nox, rad, age, medv, zn(p.value=0.057). 
+
+Проведем линейный дискриминантный анализ, используя эти признаки:
+
+```{r}
+lda.full2 = lda(cr~nox+rad+age+medv+zn, data = Boston)
+lda.full2
+plot(lda.full2)
+```
+
+<!-- Можно заметить, что, например, низкие значения признака zn соответствуют высокому уровню преступности, но в предсказание он входит с отрицательным коэффициентом. Это можно объяснить сильной корреляцией признаков. -->
+Вспомним, что LDA для двух групп, по сути, является множественной регрессией $y = a + b_1x_1+\dots+b_nx_n$, где $b_i$ -- коэффициенты дискриминантной функции, а $a=-\sum_{i=1}^nb_1\bar{x_i}$. Можем взять $y$ за новый признак и классифицировать по нему (LDA так и делает).
+
+Чтобы понять, какой вклад вност каждый признак в новую дискриминантную переменную, рассмотрим стандартизованные дискриминантные функции:
+```{r}
+t(lda.full2$scaling * apply(Boston[,c('nox', 'rad', 'age', 'medv', 'zn')], 2, sd))
+```
+и факторную структуру(корреляции нового признака с исходными):
+```{r}
+disk <- apply(Boston[,c('nox', 'rad', 'age', 'medv', 'zn')], 1, function(x) sum(x*lda.full2$scaling))
+apply(Boston[,c('nox', 'rad', 'age', 'medv', 'zn')], 2, function(x) cor(x, disk))
+```
+Можно заключить, что высокие значения nox, rad, age положительно влияют на уровень преступности.
+
+Как и в случае с логистической регрессией, посмотрим, какова точность предсказания с помощью кросс-валидации:
+```{r, warning=FALSE}
+  cv.lda <- lda(cr~nox+rad+age+medv+zn, data = Boston, CV = TRUE)
+  table(cv.lda$class, cr)
+  mean(cv.lda$class == cr)
+```
+
+Результаты подтверждают, что предпосылки дискриминантного анализа не выполнены и логистическая регрессия лучше разделает группы.
+
+Проведем теперь квадратичный дискриминантный анализ по признакам, полученным при пошаговом дискриминантном анализе.
+
+```{r}
+qda.full2 = qda(cr~nox+rad+age+medv+zn, data = Boston)
+qda.full2
+qda.full2$scaling
+```
+
+Применим кросс-валидацию:
+
+```{r}
+cv.qda <- qda(cr~nox+rad+age+medv+zn, data = Boston, CV = TRUE)
+table(cv.qda$class, cr)
+mean(cv.qda$class == cr)
+```
+
+Точность QDA почти такая же, как и у LDA, а вот баланс ошибок у QDA лучше.
+
+# Regularized DA
+
+Рассматривается такая модель: $\hat\Sigma_k(\lambda) = (1-\lambda)\hat\Sigma_k + \lambda\hat\Sigma.$
+
+```{r}
+rda.full <- klaR::rda(cr~nox+rad+age+medv+zn, data = Boston, crossval = TRUE, fold = length(cr), estimate.error = TRUE, gamma = 0)
+rda.full$regularization
+1 - rda.full$error.rate[1]
+```
+
+Регуляризация дала небольшое улучшение.
+Расширим модель: $\hat\Sigma_k(\lambda,\gamma) = (1-\gamma)\hat\Sigma_k(\lambda) + \gamma\frac{1}{d}trace(\hat\Sigma_k(\lambda)) I$.
+
+```{r}
+rda.full <- klaR::rda(cr~nox+rad+age+medv+zn, data = Boston, crossval = TRUE, fold = length(cr), estimate.error = TRUE)
+rda.full$regularization
+1 - rda.full$error.rate[1]
+```
