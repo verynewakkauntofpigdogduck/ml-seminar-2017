@@ -1,0 +1,255 @@
+---
+title: "Neural Network"
+author: "Небожатко Екатерина"
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+```{r}
+library(neuralnet)
+library(MASS)
+library(randomForest)
+library(nnet)
+
+
+
+data <- Boston
+
+set.seed(500)
+index <- sample(1:nrow(data),round(0.75*nrow(data)))
+train <- data[index,]
+test <- data[-index,]
+```
+
+##Регрессия
+###Линейная регрессия
+```{r}
+lm.fit <- glm(medv~., data=train)
+summary(lm.fit)
+pr.lm <- predict(lm.fit,test)
+MSE.lm <- sum((pr.lm - test$medv)^2)/nrow(test)
+
+MSE.lm
+```
+
+###Нейронная сеть
+
+
+Для нейронной сети необходимо стандартизировать данные. 
+
+```{r}
+scaled <- as.data.frame(scale(data))
+train_ <- scaled[index,]
+test_ <- scaled[-index,]
+
+test.error <- NULL
+train.error <- NULL
+```
+
+
+```{r}
+crossvalidate <- function(data,hidden_l=c(5))
+{
+      scaled <- as.data.frame(scale(data))
+
+      cv.error <- NULL
+
+      k <- 5
+      for(j in 1:k)
+      {
+            print(k)
+            index <- sample(1:nrow(data),round(0.90*nrow(data)))
+            train.cv <- scaled[index,]
+            test.cv <- scaled[-index,]
+
+            nn <- neuralnet(f,data=train.cv,hidden=hidden_l,linear.output=T, stepmax = 10^6)
+            pr.nn <- compute(nn,test.cv[,1:13])
+            pr.nn <- pr.nn$net.result*sd(data$medv) + mean(data$medv)
+            test.cv.r <- (test.cv$medv)*sd(data$medv) + mean(data$medv)
+            cv.error[j] <- sum((test.cv.r - pr.nn)^2)/nrow(test.cv)
+      }
+      return(mean(cv.error))
+}
+```
+
+Используем нейронную сеть с одним слоем. Наиболее популярное правило выбирать количество нейронов между 1 и количеством признаков. Для выбора количества нейронов будем использовать 5-fold cross-validation. Выберем то количество, которое минимизирует ошибку. 
+
+```{r}
+n <- names(train)
+f <- as.formula(paste("medv ~", paste(n[!n %in% "medv"], collapse = " + ")))
+
+# set.seed(100)
+# for(i in 1:13)
+# {
+#       nn <- neuralnet(f,data=scaled,hidden=c(i),linear.output=T, stepmax = 10^6)
+#       print(i)
+#       train.error[i] <- sum(((as.data.frame(nn$net.result)*sd(data$medv) + mean(data$medv))  - (scaled$medv*sd(data$medv) + mean(data$medv)))^2)/nrow(scaled)
+#       test.error[i] <- crossvalidate(data,hidden_l=c(i))
+# }
+test.error <- c(14.197351092, 19.118568862, 15.323856797,  9.900850077, 13.013030110, 10.294646035, 18.273162987, 14.455016860, 17.336128854,16.800375573, 18.927995691, 12.791386809, 19.295322392)
+
+train.error <- c(15.579924258, 11.583278409,  6.542277976,  7.211608826,  5.299934423 , 5.344445163,  3.685781822,  4.148210662,  3.280870741,2.679354351,  2.202861799,  2.153608806 , 1.886667069)
+```
+
+Функция neuralnet используется для обучения нейронной сети. По непонятным причиным, она не принимает формулу в виде "y~ ...". 
+
+Важные аргуенты
+
+1. hidden - вектор, определяющий количество нейроннов в скрытых слоях;
+
+2. stepmax - максимальное количество шагов, в обучении нейронной сети;
+
+3. algorithm - какой алгоритм будет использоваться для построения сети;
+
+4. linear.output - логический. Когда TRUE - регрессия, FALSE - классификация;
+
+5. act.fct - выбор функции активации.  ’logistic’ или ’tanh.
+
+Функция compute вычисляет результат по построенной нейронной сети для тестовой выборки.
+
+```{r}
+plot(train.error,main='MSE vs hidden neurons',xlab="Hidden neurons",ylab='Train error MSE',type='l',col='red',lwd=2)
+plot(test.error,main='MSE vs hidden neurons',xlab="Hidden neurons",ylab='Test error MSE',type='l',col='blue',lwd=2)
+
+
+opt_n <- which(min(test.error) == test.error)
+which(min(train.error) == train.error)
+opt_n
+```
+
+Оптимальное количество нейронов - `r opt_n`.
+
+Сравним результаты линейной регрессии и нейронной сети. 
+
+```{r}
+nn <- neuralnet(f,data=train_,hidden=opt_n,linear.output=T, stepmax = 10^6)
+pr.nn <- compute(nn,test_[,1:13])
+pr.nn_ <- pr.nn$net.result*sd(data$medv) + mean(data$medv)
+test.r <- (test_[,14])*sd(data$medv) + mean(data$medv)
+
+par(mfrow=c(1,2))
+
+plot(test$medv,pr.nn_,col='red',main='Real vs predicted NN',pch=18,cex=0.7)
+abline(0,1,lwd=2)
+legend('bottomright',legend='NN',pch=18,col='red', bty='n')
+
+plot(test$medv,pr.lm,col='blue',main='Real vs predicted lm',pch=18, cex=0.7)
+abline(0,1,lwd=2)
+legend('bottomright',legend='LM',pch=18,col='blue', bty='n', cex=.95)
+
+plot(test$medv,pr.nn_,col='red',main='Real vs predicted NN',pch=18,cex=0.7)
+points(test$medv,pr.lm,col='blue',pch=18,cex=0.7)
+abline(0,1,lwd=2)
+legend('bottomright',legend=c('NN','LM'),pch=18,col=c('red','blue'))
+```
+
+Теперь посчитаем 5-fold CV error для регрессии.
+
+```{r}
+library(boot)
+set.seed(200)
+k = 5
+lm.fit <- glm(medv~.,data=data)
+cv.lm <- cv.glm(data,lm.fit,K=k)$delta[1]
+cv.lm
+```
+
+5-fold CV error для нейронной сети.
+
+```{r}
+cv.nn <- test.error[opt_n]
+cv.nn
+```
+
+
+
+## Классификация
+### Нейронная сеть
+```{r}
+wines <- read.table("http://archive.ics.uci.edu/ml/machine-learning-databases/wine/wine.data", sep = ",")
+colnames(wines) <- c("type", "alcohol", "malic", "ash", "alcalinity", "magnesium", "phenols", "flavanoids", "nonflavanoids","proanthocyanins", "color", "hue", "dilution", "proline")
+head(wines)
+```
+
+Создадим dummy переменные для переменной type, которую будем предсказывать.
+
+```{r}
+data <- cbind(wines[, 2:14], class.ind(as.factor(wines$type)))
+names(data) <- c(names(wines)[2:14],"l1","l2","l3")
+data[, 1:13] <- data.frame(lapply(data[, 1:13], scale))
+```
+
+Построим 2х слойную нейронную сеть с 9 и 5 нейронами в скрытых слоях соответственно.
+
+```{r}
+set.seed(123)
+index <- sample(1:nrow(data),round(0.75*nrow(data)))
+train <- data[index,]
+test <- data[-index,]
+
+n <- names(data)
+f <- as.formula(paste("l1 + l2 + l3 ~", paste(n[!n %in% c("l1","l2","l3")], collapse = " + ")))
+
+nn <- neuralnet(f,data = train,hidden = c(9,5), linear.output = FALSE)
+pr.nn <- compute(nn, test[, 1:13])
+pr.nn_ <- pr.nn$net.result
+original_values <- max.col(test[, 14:16])
+pr.nn_2 <- max.col(pr.nn_)
+
+test.nn <- mean(pr.nn_2 == original_values)
+test.nn
+```
+
+![Neural Network](/media/ekaterina/Data/Study/Magistracy/11 term/ML/NN.png)
+
+10-fold CV error.
+
+```{r}
+set.seed(10)
+k <- 10
+outs <- NULL
+proportion <- 0.95
+
+for(i in 1:k)
+{
+  index <- sample(1:nrow(train), round(proportion*nrow(train)))
+  train_cv <- train[index, ]
+  test_cv <- train[-index, ]
+  nn_cv <- neuralnet(f,
+                     data = train_cv,
+                     hidden = c(9,5),
+                     linear.output = FALSE)
+  
+  pr.nn <- compute(nn_cv, test_cv[, 1:13])
+  pr.nn_ <- pr.nn$net.result
+  
+  original_values <- max.col(test_cv[, 14:16])
+  pr.nn_2 <- max.col(pr.nn_)
+  outs[i] <- mean(pr.nn_2 == original_values)
+}
+
+cv.nn <- mean(outs)
+cv.nn
+```
+
+
+###Random forest
+
+```{r}
+set.seed(11)
+wines$type <- as.factor(wines$type)
+rf <- randomForest(type~., data = wines, mtry = 4, importance = TRUE)
+test.rf <- mean(rf$predicted == wines$type)
+test.rf
+
+cv.rf <- 1-mean(rf$err.rate)
+
+cv.rf
+```
+
