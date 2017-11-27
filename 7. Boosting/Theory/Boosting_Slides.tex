@@ -1,0 +1,367 @@
+\documentclass[unicode, notheorems]{beamer}
+\mode<presentation>
+{
+  %\usetheme[numbers, totalnumbers, compress]{Warsaw}
+  \usetheme{Warsaw}
+  \setbeamertemplate{footline}[frame number]
+  \setbeamercovered{transparent}
+}
+\usepackage[T2A]{fontenc}
+\usepackage[cp1251]{inputenc}
+\usepackage[russian]{babel}
+\usepackage{amsthm}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\newtheorem{definition}{Определение}
+\newtheorem{fact}{Утверждение}
+\newtheorem{zam}{Замечание}
+
+\title{Композиция методов. Бустинг.}
+
+\author{Григорьева Ирина Владимировна, гр. 622}
+\institute[СПбГУ]{Санкт-Петербургский государственный университет \\
+    Прикладная математика и информатика \\
+    Статистическое моделирование 
+}
+\date{
+    Санкт-Петербург, 2017г.
+}
+
+\subject{Beamer}
+%------------------------------------------------------------
+\DeclareMathOperator{\J_0}{J_0}  
+\DeclareMathOperator{\JJ}{J}  
+\DeclareMathOperator{\HH}{H}
+\DeclareMathOperator{\PP}{P}
+\DeclareMathOperator{\I}{I}
+\DeclareMathOperator{\D}{D}
+\DeclareMathOperator{\R}{R}
+\DeclareMathOperator{\cor}{cor}
+\DeclareMathOperator{\m}{mod}
+\DeclareMathOperator{\Gr}{Gr}
+\DeclareMathOperator{\PG}{PG}
+\DeclareMathOperator{\freq}{freq}
+\DeclareMathOperator{\entropy}{entropy}
+\DeclareMathOperator{\sign}{sign}
+\DeclareMathOperator*{\argmaxt}{argmax}
+\DeclareMathOperator*{\argmint}{argmin}
+
+\newtheorem{theorem}{Теорема}
+\newtheorem{defin}{Определение}
+\usepackage{kbordermatrix}
+\begin{document}
+\beamertemplatenavigationsymbolsempty 
+\maketitle 
+%--------------------------------------------
+\begin{frame}\frametitle{Постановка задачи}
+$<X, Y, f, X^n>$, где 
+\begin{itemize}
+\item $X$~--- пространство объектов, $Y$~--- множество ответов,
+\item $f: X \to Y$~--- неизвестная целевая зависимость,
+\item $X^n=(x_1,\ldots, x_n)$~--- обучающая выборка,
+\item $Y^n=(y_1,\ldots, y_n)$~--- вектор ответов на обучающих объектах, где $y_i=f(x_i)$.\\[1mm]
+\end{itemize}
+Требуется построить алгоритм $a(x)=C(b(x))$, аппроксимирующий целевую зависимость $f$ на всем $X$, где
+\begin{itemize}
+\item $b: X \to R$~--- базовый алгоритм,
+\item $C: R \to Y$~--- решающее правило,
+\item $R$~--- пространство оценок.\\[2mm]
+\end{itemize}
+\small{В случае решения задачи классификации $b(x)$ может являться вероятность принадлежности объекта $x$ классу, которое решающее правило $C$ переводит в номер класса.\\[1mm] В случае же регрессии $C(b)= b$.}
+\end{frame}
+%--------------------------------------------
+\begin{frame}\frametitle{Изменение постановки задачи}
+\small{$\blacktriangleright$ Вместо одного базового алгоритма $b$ рассматривается $b_1,\ldots, b_T$.\\[2mm]
+$\mathcal{B}(\Theta)=\{ b(\cdot;\theta)| \theta \in \Theta\}$~--- параметризованное множество базовых алгоритмов, }\\
+\small{ \textbf{Выбор базового алгоритма:} выбор $\theta \in \Theta$ и $b(x)=b(x;\theta) \in \mathcal{B}(\Theta)$:}\\
+\small{~--- решающие деревья~--- используются чаще всего;\\
+~--- пороговые правила (data stumps): $b(x,\theta=\{i,s\})=[f_i(x) \lessgtr s]$.\\
+\begin{defin}
+Композиция базовых алгоритмов $b_1,\ldots, b_T \in \mathcal{B}$ имеет вид
+\begin{equation*}
+a(x)=C(F(b_1(x),\ldots, b_T(x);\omega)),
+\end{equation*}
+где $F: R^{\mathrm{T}} \to R$~--- корректирующая операция, параметризованная с помощью $\omega \in \Omega$.
+\end{defin}}
+\small{Например, $F$~--- линейная, то есть $\omega=(\omega_1,\ldots,\omega_T) \in \mathbb{R}^\mathrm{T}$
+\begin{equation*}
+F(b_1(x),\ldots, b_T(x);\omega)= \sum_{t=1}^{T}{\omega_t b_t(x)}
+\end{equation*}
+\textbf{Задача:} Подбор параметров $\omega$ и алгоритмов $\{b_t(x)\}_{t=1}^T$.}
+\end{frame}
+%------------------------------------------------
+\begin{frame}\frametitle{Примеры}
+\small{\textbf{ Примеры пространства оценок и решающих правил:}
+\begin{itemize}
+\item Классификация на 2 класса, $Y=\{-1,1\}$:
+\begin{equation*}
+a(x)=\sign(b(x)),
+\end{equation*}
+где $R=\mathbb{R}, b: X \to \mathbb{R}, C(b) = \sign(b(x))$.
+\item Классификация на $M$ классов, $Y=\{1,\ldots, M\}$:
+\begin{equation*}
+a(x)= \argmaxt_{y \in Y}{b_y(x)},
+\end{equation*}
+где $R=\mathbb{R}^M, b: X \to \mathbb{R}^M,~C(b) = \argmaxt_{y \in Y}{b_y(x)}$.
+\end{itemize}
+}
+\small{\textbf{Примеры корректирующих операций:}
+\begin{itemize}
+\item Простое голосование:
+\begin{equation*}
+F(b_1(x),\ldots, b_T(x))= \frac{1}{T} \sum_{t=1}^{T}{b_t(x)}, x \in X.
+\end{equation*}
+\item Взвешенное голосование:
+\begin{equation*}
+F(b_1(x),\ldots, b_T(x))= \sum_{t=1}^{T}{\omega_t b_t(x)}, x \in X, \omega_t \in \mathbb{R}.
+\end{equation*}
+\end{itemize}
+}
+\end{frame}
+%--------------------------------------------
+\begin{frame}\frametitle{Композиционные методы}
+\textcolor{blue}{Bagging:} \\
+Построение деревьев для bootstrap sample и создание единой предсказательной модели.
+\begin{itemize}
+\item Наблюдения имеют одинаковые шансы попасть в обучающую выборку.
+\item Каждое дерево строится независимо от других деревьев (параллельное обучение базовых алгоритмов).
+\end{itemize}
+
+\textcolor{blue}{Boosting:}\\ 
+Работает аналогичным образом, за исключением того, что 
+\begin{itemize}
+\item Обучающая выборка на каждой итерации определяется, исходя из ошибок классификации на предыдущих итерациях.
+\item Каждое дерево строится с использованием информации из ранее выращенных деревьев (последовательное обучение базовых алгоритмов).
+\end{itemize}
+\end{frame}
+%-------------------------------
+\begin{frame}\frametitle{Основная идея бустинга}
+$\blacktriangleright$ Жадность алгоритма:\\[2mm]
+Пусть $T_0<T$, выбрали $\{b_t(x)\}_{t=1}^{T_0}$ и параметры $\{\omega_t)\}_{t=1}^{T_0}$.\\[2mm]
+На $(T_0+1)$ шаге выбираем $\omega_{T_0+1}$ и базовый алгоритм $b_{T_0+1}$ так, чтобы исправить ошибки композиции, основанной на на первых $T_0$ алгоритмах
+\begin{equation*}
+a(x)=C\Big(\sum_{t=1}^{T_0}{\omega_t b_t(x)}\Big).
+\end{equation*}
+При этом базовые алгоритмы $\{b_t\}_{t=1}^{T_0}$ и параметры корректирующей функции $\{\omega_t\}_{t=1}^{T_0}$ остаются без изменений.
+\end{frame}
+%--------------------------------------------
+\begin{frame}\frametitle{Пример работы бустинга для регрессии}
+\textbf{Задача регрессии:} $C(b)=b,~Y=\mathbb{R},~R=\mathbb{R}.$\\
+\small {Рассмотрим $\mathcal{B}(\Theta)$~--- семейство неглубоких решающих деревьев,\\
+где $\theta$~--- число терминальных узлов дерева.}\\
+Пусть 
+\begin{equation*}
+F(b_1(x),\ldots,b_T(x))=\sum_{t=1}^{T}{b_t(x)},~x \in X.
+\end{equation*}
+Обучим алгоритм 
+\begin{equation*}
+b_1(x)=\argmint_{b \in \mathcal{B}} \frac{1}{n} \sum_{i=1}^{n}{ {(b(x_i)-y_i)}^2}.
+\end{equation*}
+Добавим $b_2$, исправляющий ошибки $b_1$: $b_1(x_i)+b_2(x_i)=y_i$.
+Поправка $y_i-b_1(x_i),~i=1,\ldots,n$.
+\begin{equation*}
+b_2(x)=\argmint_{b \in \mathcal{B}} \frac{1}{n} \sum_{i=1}^{n}{ {(b(x_i)-(b_1(x_i)-y_i))}^2},
+\end{equation*}
+\begin{equation*}
+\ldots
+\end{equation*}
+\begin{equation*}
+b_T(x)=\argmint_{b \in \mathcal{B}} \frac{1}{n} \sum_{i=1}^{n}{ {(b(x_i)-(\sum_{t=1}^{T-1}{b_t(x_i)-y_i)})^2}}.
+\end{equation*}
+\end{frame}
+%--------------------------------------------
+\begin{frame}\frametitle{Бустинг для задачи классификации на два класса}
+Пусть $Y=\{-1, 1\}$, $C(b)=\sign(b)$,\\[1mm]
+$b_t: X \to \{-1,0,1\},~b_t \in \mathcal{B}(\Theta)$,
+$b_t(x)=0$~--- отказ базового алгоритма от классификации $x$.\\[2mm]
+Положим
+\begin{equation*}
+F(b_1(x),\ldots, b_T(x))= \sum_{t=1}^{T}{\omega_t b_t(x)},
+\end{equation*}
+Тогда
+\begin{equation*}
+a(x)=\sign(\sum_{t=1}^{T}{\omega_t b_t(x)}),~x \in X.
+\end{equation*}
+Функционал качества композиции~--- число ошибок на $X^n$:
+\begin{equation*}
+Q_T= \sum_{i=1}^{n}[y_i \sum_{t=1}^{T}{\omega_t b_t(x_i)} < 0]
+\end{equation*}
+\small{$Q_T$ мажорируется некоторой непрерывно дифференцируемой функцией, поддающейся эффективной оптимизации. Выбор функции зависит от характера задачи.}
+\end{frame}
+%-------------------------------------------------------------------------------------
+\begin{frame}\frametitle{Гладкие аппроксимации пороговой функции потерь [z<0]}
+\begin{figure}
+\begin{minipage}[h]{0.80\linewidth}
+\includegraphics[scale=0.87]{Apr_function.png}
+\end{minipage}
+\vfill
+\begin{minipage}[h]{0.75\linewidth}
+$S(z)=2(1+\exp(z))^{-1}$~--- сигмоидная,\\
+$L(z)=\log_2(1+\exp(-z))$~--- логарифмическая,\\
+$V(z)=(1-z)_{+}$~--- кусочно-линейная,\\
+$E(z)=\exp(-z)$~--- экспоненциальная,\\
+$Q(z)=(1-z)^2$~--- квадратичная.
+\end{minipage}
+\end{figure}
+\end{frame}
+%--------------------------------------------
+\begin{frame}\frametitle{Экспоненциальная аппроксимация. Алгоритм AdaBoost}
+Оценка функционала $Q_T$ сверху имеет вид:
+\begin{equation*}
+Q_T \le \tilde{Q}_T= \sum_{i=1}^{n}{\underbrace{\exp\{-y_i  \sum_{t=1}^{T-1}{\omega_t b_t(x_i)}}_{v_i} \} \exp\{-y_i \omega_T b_T(x_i)\}}.
+\end{equation*}
+Нормированные веса: $\tilde{V}_n=(\tilde{v}_1,\ldots,\tilde{v}_n),~\tilde{v}_i=v_i/\sum_{j=1}^{n}{v_j}$\\[3mm]
+Введем функционалы качества алгоритма $b$ на выборке $X^n,~Y^n$ с нормированным вектором весов $U_n=(u_1,\ldots, u_n)$~--- суммарный вес ошибочных (negative) и правильных (positive) классификаций:
+\begin{equation*}
+N(b,U_n)=\sum_{i=1}^{n}{u_i[b(x_i)=-y_i]},~P(b,U_n)=\sum_{i=1}^{n}{u_i[b(x_i)=y_i]}.
+\end{equation*}
+При отсутствии отказов $b$ от классификации: $N+P=1$.
+\end{frame}
+%--------------------------------------------
+\begin{frame}\frametitle{Основная теорема бустинга (для AdaBoost)}
+\begin{theorem}[Freund, Shapire, 1996]
+Пусть для любого нормированного вектора весов $U_n$ существует алгоритм $b \in \mathcal{B}(\Theta)$, классифицирующий выборку немного лучше, чем наугад: $P(b,U_n) > N(b,U_n)$. \\
+Тогда минимум функционала $\tilde{Q}_T$ достигается при 
+\begin{equation*}
+b_T=\argmaxt_{b \in \mathcal{B}}{(\sqrt{P(b,\tilde{V_n})}-\sqrt{N(b,\tilde{V_n})})},
+\end{equation*}
+\begin{equation*}
+\omega_T=\frac{1}{2} \ln \frac{P(b_T,\tilde{V_n})}{N(b_T,\tilde{V_n})}.
+\end{equation*}
+\end{theorem}
+\end{frame}
+%------------------------------------------------
+\begin{frame}\frametitle{Следствие. Классический вариант AdaBoost}
+Пусть $b_t: X \to \{-1;1\}$. Тогда $P=1-N$.
+\begin{theorem}[Freund, Shapire, 1995]
+Пусть для любого нормированного вектора весов $U_n$ существует алгоритм $b \in \mathcal{B}(\Theta)$, классифицирующий выборку немного лучше, чем наугад: $N(b,U_n)<\frac{1}{2}$. \\
+Тогда минимум функционала $\tilde{Q}_T$ достигается при 
+\begin{equation*}
+b_T=\argmint_{b \in \mathcal{B}}{N(b,\tilde{V}_n)},
+\end{equation*}
+\begin{equation*}
+\omega_T=\frac{1}{2} \ln \frac{1-N(b_T,\tilde{V_n})}{N(b_T,\tilde{V_n})}.
+\end{equation*}
+\end{theorem}
+\end{frame}
+%------------------------------------------------
+\begin{frame}\frametitle{Алгоритм AdaBoost}
+\begin{figure}
+\begin{center}
+\includegraphics[scale=0.45]{AdaBoost.png}
+\end{center}
+\end{figure}
+\begin{equation*}
+a(x)=\sign(\omega_1 b_1(x)+\ldots+\omega_T b_T(x)),~x \in X.
+\end{equation*}
+\end{frame}
+%------------------------------------------------------
+\begin{frame}\frametitle{Алгоритм AdaBoost}
+\textcolor{blue}{\textbf{{\small Вход}}}: $X^n$, $T$~--- максимальное число базовых алгоритмов.\\
+\textcolor{blue}{\textbf{{\small Выход}}}: базовые алгоритмы $b_t$ и их веса $\omega_t$, $t=1,\ldots,T$.\\[2mm]
+1:$~~$ $v_i:=\frac{1}{n},~i=1,\ldots,n;$ \\
+2:$~~$ \textcolor{blue}{\textbf{\small{для всех}}} $t=1,\ldots,T$\\
+3:$~~$ обучить базовый алгоритм:\\[1mm]
+$~~~~~b_t:=\argmint_{b \in \mathcal{B}}{N(b,\tilde{V}_n)};$\\[2mm]
+4:$~~$ $\omega_t:=\frac{1}{2} \ln \frac{1-N(b_t,\tilde{V_n})}{N(b_t,\tilde{V_n})};$\\[2mm]
+5:$~~$ обновить веса объектов:\\[1mm]
+$~~~~~v_i:=v_i exp\{-\omega_t y_i b_t(x_i)\},~i=1,\ldots,n;$\\[2mm]
+6:$~~$ нормировать веса объектов:\\[1mm]
+$~~~~~v_0:=\sum_{j=1}^{n}{v_i};$\\[2mm]
+$~~~~~v_i:=\frac{v_i}{v_0},~i=1,\ldots,n.$
+\end{frame}
+%------------------------------------------------------
+\begin{frame}\frametitle{Рекомендации}
+\begin{itemize}
+\item Модификация формулы для $\omega_t$ на случай $N=0$:
+\begin{equation*}
+\omega_t:=\frac{1}{2}  \ln \frac{1-N(b_t,\tilde{V_n})+\frac{1}{n}}{N(b_t,\tilde{V_n})+\frac{1}{n}}.
+\end{equation*}
+\item Объекты с большими весами $v_i$~--- выбросы. Исключаем их и строим композицию заново.
+\item Требуемая длина обучающей выборки оценивается величиной порядка $10^4\ldots10^6$.
+\item Базовые алгоритмы должны быть слабыми, из сильных хорошую композицию не построить:
+\begin{itemize}
+\item Сильный алгоритм, давая нулевую ошибку на обучающих данных, не адаптируется и композиция будет состоять из одного базового алгоритма.
+\item Один, даже сильный, алгоритм может дать <<плохое>> предсказание на данных тестирования, давая <<хорошие>> результаты на обучающих данных.
+\end{itemize}
+\end{itemize}
+\end{frame}
+%------------------------------------------------------
+\begin{frame}\frametitle{Обобщение бустинга. Gradient Boosting}
+\small{Алгоритм бустинга обобщается на тот случай, когда пороговая функция потерь $Q_T$ оценивается сверху произвольный невозрастающей функцией $\mathcal{L}(a,y)$.\\[2mm]
+$b_t$ возвращают произвольные вещественные значения, не обязательно $\pm 1$, то есть $R=\mathbb{R}$.}
+\begin{equation*}
+a(x)=\sum_{t=1}^{T}{\omega_t b_t(x)},~x \in X,~\omega_t \in \mathbb{R}_{+}
+\end{equation*}
+Функционал качества:
+\begin{equation*}
+Q_T \leq  \tilde{Q}_T=\sum_{i=1}^{n}{\mathcal{L} \underbrace{ \Big( \underbrace{y_i \sum_{t=1}^{T-1}{ \omega_t b_t(x_i)}}_{f_{T-1,i}}+y_i \omega_T b_T(x_i) \Big )}_{f_{T,i}}},
+\end{equation*}
+где $\mathcal{L}(a,y)$~--- произвольная функция потерь,\\
+$f_{T-1}={(f_{T-1,i})}_{i=1}^{n}$~--- текущее приближение,\\
+$f_{T}={(f_{T,i})}_{i=1}^{n}$~--- следующее приближение.
+\end{frame}
+%------------------------------------------------
+\begin{frame}\frametitle{Обобщение бустинга. Gradient Boosting}
+Рассмотрим функцию потерь $\mathcal{L}$ как функцию от параметра $\omega_T$:
+\begin{equation*}
+\lambda(\omega_T):=\mathcal{L}(f_{T-1,i}+y_i \omega_T b_T(x_i)).
+\end{equation*}
+Линеаризуем $\lambda(\omega_T)$ в окрестности $\omega_T=0$, разложив в ряд Тейлора и отбросив старшие члены:
+\begin{equation*}
+\lambda(\omega_T)\approx \lambda(0)+\omega_T \lambda'(0),
+\end{equation*}
+что приведет в линеаризации $\tilde{Q}_T$ по параметру $\omega_T$:
+\begin{equation*}
+\tilde{Q}_T \approx \sum_{i=1}^{n}{\mathcal{L}(f_{T-1,i})}-\omega_T \sum_{i=1}^{n}{ \underbrace{-\mathcal{L}'(f_{T-1,i})}_{v_i} y_i b_T(x_i)},
+\end{equation*}
+где $v_i$~--- веса объектов.
+\end{frame}
+%------------------------------------------------------
+\begin{frame}\frametitle{Обобщение бустинга. Gradient Boosting}
+Для минимизации функционала качества $\tilde{Q}_T$ ищут такой базовый алгоритм $b_T$, что ${\{b_T(x_i)\} }_{i=1}^{n}$ приближает вектор антиградиента ${ \{-\mathcal{L}(f_{T-1,i})\} }_{i=1}^{n}$:
+\begin{equation*}
+b_T:=\argmint_{b \in \mathcal{B}} \sum_{i=1}^{n}{ {\Big ( b(x_i)+ \mathcal{L}'(f_{T-1,i}) \Big )}^2}.
+\end{equation*}
+После построения $b_T$, параметр $\omega_T$ определяется путем одномерной минимизации функционала $\tilde{Q}_T$. \\[2mm]
+Итерации этих двух шагов приводят к обобщенному алгоритму бустинга AnyBoost.\\[2mm]
+$\blacktriangleright$ AnyBoost переходит в AdaBoost при $b_t:X \to \{-1,1\}$ и $\mathcal{L}(f)=e^{-f}$
+\end{frame}
+%------------------------------------------------
+\begin{frame}\frametitle{Алгоритм AnyBoost}
+\textcolor{blue}{\textbf{{\small Вход}}}: $X^n, Y^n$~--- обучающая выборка,\\
+ $T$~--- максимальное число базовых алгоритмов.\\
+\textcolor{blue}{\textbf{{\small Выход}}}: базовые алгоритмы $b_t$ и их веса $\omega_t$, $t=1,\ldots,T$.\\[2mm]
+1:$~~$ $f_i:=0,~i=1,\ldots,n;$ \\
+2:$~~$ \textcolor{blue}{\textbf{\small{для всех}}} $t=1,\ldots,T$\\
+3:$~~$ найти базовый алгоритм, приближающий градиент:\\[1mm]
+$~~~~~b_t:=\argmint_{b \in \mathcal{B}} \sum_{i=1}^{n}{{(b(x_i)+ \mathcal{L}'(f_i))}^2};$\\[2mm]
+4:$~~$ $\omega_t:=\argmint_{\omega > 0} \sum_{i=1}^{n}{ {\mathcal{L}(f_i+y_i \omega b_t(x_i))}};$\\[2mm]
+5:$~~$ обновить значения $f_i$ на объектах выборки:\\[1mm]
+$~~~~~f_i:=f_i+\omega_t b_t(x_i) y_i,~i=1,\ldots,n.$\\[4mm]
+\textbf{Стохастический градиентный бустинг (SGB):} на шагах 3-5 использовать не всю выборку $X^n$, а случайную подвыборку без возвращений.
+\end{frame}
+%------------------------------------------------
+\begin{frame}\frametitle{Достоинства}
+\begin{itemize}
+\item Градиентный бустинг~--- наиболее общий из всех бустингов:\\
+{\small ~--- произвольная функция потерь $\mathcal{L}$,\\
+~--- произвольное пространство оценок $R$,\\
+~--- подходит для регрессии, классификации, ранжирования.}
+\item Хорошая обобщающая способность.
+\item Временная сложность построения композиции определяется временем обучения базовых алгоритмов.
+\item Простота реализации.
+\item Возможность идентифицировать выбросы.
+\end{itemize}
+\end{frame}
+%------------------------------------------------
+\begin{frame}\frametitle{Недостатки}
+\begin{itemize}
+\item Жадная стратегия приводит к построению неоптимального набора базовых алгоритмов. Для улучшения композиции можно периодически возвращаться к ранее построенным алгоритмам и обучать
+их заново.
+\item Построение громоздких композиций, исключающих возможность содержательной интерпретации.
+\item Требуются большие ресурсы памяти для хранения базовых алгоритмов и существенные затраты времени на вычисление классификаций.
+\end{itemize}
+\end{frame}
+%------------------------------------------------
+\end{document}
